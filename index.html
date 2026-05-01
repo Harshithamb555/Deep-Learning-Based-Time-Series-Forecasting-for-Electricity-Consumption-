@@ -1,0 +1,297 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Time Series Forecast — Project Dashboard</title>
+
+  <!-- Bootstrap 5 CSS -->
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+
+  <style>
+    :root{
+      --primary:#0d6efd;
+      --muted:#6c757d;
+      --card-bg:#ffffff;
+      --page-bg:#f6f8fa;
+      --accent:#ff7f50;
+    }
+    body { background: var(--page-bg); font-family: Inter, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial; color:#222; }
+    .topbar { background: linear-gradient(90deg, rgba(13,110,253,0.06), rgba(13,110,253,0.02)); border-bottom:1px solid rgba(0,0,0,0.04); }
+    .project-title { color: #0b4a76; font-weight:700; }
+    .card-ghost { background: rgba(255,255,255,0.98); border: 1px solid rgba(0,0,0,0.04); border-radius: .7rem; box-shadow: 0 6px 18px rgba(18,38,63,0.04); }
+    .metric-value { font-size:1.6rem; font-weight:700; color:#0b5; }
+    .metric-label { font-size:.8rem; text-transform:uppercase; color:var(--muted); letter-spacing:.06em; }
+    .small-muted { color:var(--muted); font-size:.9rem; }
+    .chart-img { border-radius:6px; border:1px solid rgba(0,0,0,0.06); }
+    .model-badge { font-weight:600; }
+    .feature-chip { background:#eef6ff; color:#064; padding:.25rem .5rem; border-radius:20px; font-size:.85rem; }
+    .card-header-compact { background: transparent; border-bottom: none; padding-bottom:0; }
+    .download-btn { background: linear-gradient(90deg,#ff9d3b,#ff7f50); color:white; border:none; }
+  </style>
+</head>
+<body>
+
+  <!-- TOPBAR -->
+  <header class="topbar py-3 mb-4">
+    <div class="container d-flex align-items-center justify-content-between">
+      <div>
+        <h1 class="project-title mb-0">📊 Time Series Forecasting Using Deep Learning Models</h1>
+        <div class="small-muted">Household Power Consumption · Compare RNN (LSTM) · CNN · Transformer</div>
+      </div>
+      <div class="text-end">
+        <div class="mb-1 small-muted">Models loaded:</div>
+        <div>
+          {% if model_names %}
+            {% for name in model_names %}
+              <span class="badge bg-light text-dark model-badge me-1">{{ name }}</span>
+            {% endfor %}
+          {% else %}
+            <span class="badge bg-warning text-dark">No models</span>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <main class="container mb-5">
+    <div class="row g-4">
+      <!-- LEFT: Overview & Pipeline -->
+      <div class="col-lg-4">
+        <div class="card card-ghost p-3 mb-3">
+          <div class="d-flex justify-content-between align-items-start">
+            <div>
+              <h5 class="mb-1">Dataset & Goal</h5>
+              <div class="small-muted">Forecast <strong>{{ horizon }}</strong> days of Global Active Power using previous <strong>{{ look_back }}</strong> days.</div>
+            </div>
+            <div class="text-end">
+              <a class="btn btn-sm download-btn" href="/download_report" target="_blank">Download Report</a>
+            </div>
+          </div>
+
+          <hr>
+
+          <h6 class="mb-2">Preprocessing Pipeline</h6>
+          <ul class="small-muted ps-3">
+            {% for step in pipeline_summary %}
+              <li>{{ step }}</li>
+            {% endfor %}
+          </ul>
+
+          <hr>
+
+          <h6 class="mb-2">Features</h6>
+          <div class="d-flex gap-2 flex-wrap">
+            <span class="feature-chip">Global_active_power</span>
+            <span class="feature-chip">day</span>
+            <span class="feature-chip">weekday</span>
+            <span class="feature-chip">season</span>
+          </div>
+
+          <hr>
+
+          <h6 class="mb-2">Model Architectures</h6>
+          <div class="small-muted">
+            <strong>RNN (LSTM)</strong> — {{ architecture_summary['RNN (LSTM)'] }}<br>
+            <strong>CNN 1D</strong> — {{ architecture_summary['CNN Model'] }}<br>
+            <strong>Transformer</strong> — {{ architecture_summary['Transformer Model'] }}
+          </div>
+        </div>
+
+        <!-- Live Prediction Card -->
+        <div class="card card-ghost p-3">
+          <div class="card-header-compact mb-2">
+            <h6 class="mb-0">Interactive Live Prediction</h6>
+            <div class="small-muted">Enter the latest {{ look_back }} values (kWh)</div>
+          </div>
+
+          <form id="live-predict-form" class="mt-2">
+            <div class="row g-2">
+              {% for i in range(look_back) %}
+              <div class="col-4 col-sm-3 col-md-4">
+                <label class="form-label small-muted">t-{{ look_back - i }}</label>
+                <input class="form-control form-control-sm" type="number" step="0.01" name="input_val_{{ i }}" id="input_val_{{ i }}" value="1.0" required>
+              </div>
+              {% endfor %}
+            </div>
+
+            <div class="mt-3 d-flex gap-2 align-items-center">
+              <select class="form-select form-select-sm w-50" name="model_name_live" id="model_name_live">
+                {% for name in model_names %}
+                  <option value="{{ name }}" {% if selected_model == name %}selected{% endif %}>{{ name }}</option>
+                {% endfor %}
+              </select>
+              <button class="btn btn-primary btn-sm" type="submit">Predict</button>
+            </div>
+
+            <div id="live-results" class="mt-3" style="display:none;">
+              <div class="card p-2">
+                <div id="results-display"></div>
+              </div>
+            </div>
+
+            <div id="live-error" class="text-danger mt-2" style="display:none;"></div>
+          </form>
+        </div>
+      </div>
+
+      <!-- MIDDLE: Controls & Metrics -->
+      <div class="col-lg-8">
+        <div class="card card-ghost p-3 mb-3">
+          <div class="d-flex justify-content-between align-items-center mb-2">
+            <div>
+              <h5 class="mb-0">Evaluate Model</h5>
+              <div class="small-muted">Pick a model and run full evaluation on test set</div>
+            </div>
+
+            <form id="eval-form" action="/predict" method="post" class="d-flex gap-2">
+              <select class="form-select form-select-sm" name="model_name" id="model_name">
+                {% for name in model_names %}
+                  <option value="{{ name }}" {% if selected_model == name %}selected{% endif %}>{{ name }}</option>
+                {% endfor %}
+              </select>
+              <button class="btn btn-outline-primary btn-sm" type="submit">Run Evaluation</button>
+            </form>
+          </div>
+
+          {% if selected_model %}
+          <div class="mt-3">
+            <h6 class="mb-2">Results — <span class="text-primary">{{ selected_model }}</span></h6>
+
+            <div class="row g-2">
+              {% for key, value in metrics.items() %}
+                <div class="col-6 col-md-3">
+                  <div class="p-3 card-ghost h-100">
+                    <div class="metric-label">{{ key }}</div>
+                    <div class="metric-value mt-1">
+                      {% if value is number %}
+                        {{ "%.3f"|format(value) }}
+                      {% else %}
+                        {{ value }}
+                      {% endif %}
+                    </div>
+                  </div>
+                </div>
+              {% endfor %}
+            </div>
+          </div>
+          {% else %}
+            <div class="small-muted mt-2">No evaluation has been run yet. Select a model and click <strong>Run Evaluation</strong>.</div>
+          {% endif %}
+        </div>
+
+        <!-- Plots / Tabs -->
+        <div class="card card-ghost p-3">
+          <ul class="nav nav-tabs" id="plotsTab" role="tablist">
+            <li class="nav-item" role="presentation">
+              <button class="nav-link active" id="forecast-tab" data-bs-toggle="tab" data-bs-target="#forecast" type="button" role="tab">Forecast (t+1)</button>
+            </li>
+            <li class="nav-item" role="presentation">
+              <button class="nav-link" id="horizon-tab" data-bs-toggle="tab" data-bs-target="#horizon" type="button" role="tab">Horizon</button>
+            </li>
+            <li class="nav-item" role="presentation">
+              <button class="nav-link" id="train-tab" data-bs-toggle="tab" data-bs-target="#train" type="button" role="tab">Training</button>
+            </li>
+            <li class="nav-item" role="presentation">
+              <button class="nav-link" id="attention-tab" data-bs-toggle="tab" data-bs-target="#attention" type="button" role="tab">Attention</button>
+            </li>
+          </ul>
+          <div class="tab-content mt-3">
+            <div class="tab-pane fade show active" id="forecast" role="tabpanel">
+              {% if forecast_plot_data %}
+                <img src="data:image/png;base64,{{ forecast_plot_data }}" class="img-fluid chart-img" alt="Forecast vs Actual">
+              {% else %}
+                <div class="p-3 small-muted">Forecast plot not available yet. Run evaluation.</div>
+              {% endif %}
+            </div>
+
+            <div class="tab-pane fade" id="horizon" role="tabpanel">
+              {% if horizon_plot_data %}
+                <img src="data:image/png;base64,{{ horizon_plot_data }}" class="img-fluid chart-img" alt="Horizon">
+              {% else %}
+                <div class="p-3 small-muted">Horizon plot not available yet. Run evaluation.</div>
+              {% endif %}
+            </div>
+
+            <div class="tab-pane fade" id="train" role="tabpanel">
+              {% if training_plot_data %}
+                <img src="data:image/png;base64,{{ training_plot_data }}" class="img-fluid chart-img" alt="Training">
+              {% else %}
+                <div class="p-3 small-muted">Training plot not available (placeholder).</div>
+              {% endif %}
+            </div>
+
+            <div class="tab-pane fade" id="attention" role="tabpanel">
+              {% if attention_plot_data %}
+                <img src="data:image/png;base64,{{ attention_plot_data }}" class="img-fluid chart-img" alt="Attention">
+              {% else %}
+                <div class="p-3 small-muted">Attention visualization available only for Transformer model.</div>
+              {% endif %}
+            </div>
+          </div>
+        </div>
+
+        <!-- Analysis / Notes -->
+        <div class="card card-ghost p-3 mt-3">
+          <h6>Quick Analysis</h6>
+          <p class="small-muted">Use the forecast charts and horizon comparison to evaluate model bias, variance and under/over-forecasting on daily consumption. For final delivery, include tabular error breakdown by season and weekday to strengthen your project report.</p>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <!-- Bootstrap 5 JS (bundle includes Popper) -->
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+
+  <script>
+    // Live predict AJAX
+    document.getElementById('live-predict-form')?.addEventListener('submit', function(e){
+      e.preventDefault();
+      const form = e.target;
+      const data = new URLSearchParams(new FormData(form));
+      const resultsBox = document.getElementById('live-results');
+      const resultsDisplay = document.getElementById('results-display');
+      const errEl = document.getElementById('live-error');
+      resultsBox.style.display = 'none';
+      errEl.style.display = 'none';
+      resultsDisplay.innerHTML = '';
+
+      fetch('/live_predict', { method:'POST', body: data })
+        .then(async r => {
+          if (!r.ok) {
+            const txt = await r.text();
+            throw new Error(txt || 'Request failed');
+          }
+          return r.json();
+        })
+        .then(resp => {
+          let html = '';
+          for (const [k,v] of Object.entries(resp)) {
+            html += `<div class="result-item">${k}: <strong>${v}</strong></div>`;
+          }
+          resultsDisplay.innerHTML = html;
+          resultsBox.style.display = 'block';
+        })
+        .catch(err => {
+          errEl.textContent = err.message || 'Server error';
+          errEl.style.display = 'block';
+        });
+    });
+
+    // Optional: keep selected tab across requests (small UX)
+    const tabs = document.querySelectorAll('#plotsTab button[data-bs-toggle="tab"]');
+    tabs.forEach(btn => {
+      btn.addEventListener('shown.bs.tab', function (e) {
+        localStorage.setItem('activePlotTab', e.target.id);
+      });
+    });
+    const active = localStorage.getItem('activePlotTab');
+    if (active) {
+      const btn = document.getElementById(active);
+      if (btn) {
+        new bootstrap.Tab(btn).show();
+      }
+    }
+  </script>
+</body>
+</html>
